@@ -42,7 +42,6 @@ testApp(); // ======================================================
 // Get the last element in blockchain array
 var getLatestBlock = () => blockchain[blockchain.length - 1];
 
-
 // Implemented during the mining process..miner calculates the hash for the next block.
 var calculateHash = (index, previousHash, timestamp, data) => {
     return CryptoJS.SHA256(index + previousHash + timestamp + data).toString();
@@ -59,3 +58,58 @@ function testCalcHashForBlock() {
     console.log(calculateHashForBlock(getGenesisBlock()));
 }
 testCalcHashForBlock(); // =======================================
+
+
+// Generate NEXT BLOCK - Retrieve hash of previous block to verify linkage, then create new block with hash
+var generateNextBlock = (blockData) => {
+    var previousBlock = getLatestBlock();
+    var nextIndex = previousBlock.index + 1;
+    var nextTimestamp = new Date().getTime() / 1000;
+    var nextHash = calculateHash(nextIndex, previousBlock.hash, nextTimestamp, blockData);
+    return new Block(nextIndex, previousBlock.hash, nextTimestamp, blockData, nextHash);
+};
+
+
+// Validate block or chain of blocks' integrity
+var isValidNewBlock = (newBlock, previousBlock) => {
+    if (previousBlock.index + 1 !== newBlock.index) {
+        console.log('invalid index');
+        return false;
+    } else if (previousBlock.hash !== newBlock.previousHash) {
+        console.log('invalid previoushash');
+        return false;
+    } else if (calculateHashForBlock(newBlock) !== newBlock.hash) {
+        console.log(typeof (newBlock.hash) + ' ' + typeof calculateHashForBlock(newBlock));
+        console.log('invalid hash: ' + calculateHashForBlock(newBlock) + ' ' + newBlock.hash);
+        return false;
+    }
+    return true;
+};
+
+
+// If valid ADD BLOCK
+var addBlock = (newBlock) => {
+    if (isValidNewBlock(newBlock, getLatestBlock())) {
+        blockchain.push(newBlock);
+    }
+};
+
+// {{{{{ Test function }}}}} ====================================
+// Test addition / validation of next block
+function testAddBlock() {
+    function showBlockchain(inputBlockchain) {
+        for (let i = 0; i < inputBlockchain.length; i++) {
+            console.log(inputBlockchain[i]);
+        }
+
+        console.log();
+    }
+
+    console.log("blockchain before addBlock() execution:");
+    showBlockchain(blockchain);
+    addBlock(generateNextBlock("test block data"));
+    console.log("\n");
+    console.log("blockchain after addBlock() execution:");
+    showBlockchain(blockchain);
+}
+testAddBlock(); // ================================================
