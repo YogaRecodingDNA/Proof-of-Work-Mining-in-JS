@@ -9,6 +9,7 @@ var http_port = process.env.HTTP_PORT || 3001;
 // Web sockets used for real-time peer-to-peer communication between the nodes.
 var p2p_port = process.env.P2P_PORT || 6001;
 var initialPeers = process.env.PEERS ? process.env.PEERS.split(',') : [];
+var difficulty = 4;
 
 
 var sockets = [];
@@ -21,19 +22,21 @@ var MessageType = {
 };
 
 class Block {
-    constructor(index, previousHash, timestamp, data, hash) {
+    constructor(index, previousHash, timestamp, data, hash, difficulty, nonce) {
         this.index = index;
         this.previousHash = previousHash.toString();
         this.timestamp = timestamp;
         this.data = data;
         this.hash = hash.toString();
+        this.difficulty = difficulty;
+        this.nonce = nonce;
     }
 }
 
 // Create 1st block in the blockchain (AKA Genesis Block) being hardcoded and titled as genesis block 
 var getGenesisBlock = () => {
     return new Block(0, "0", 1465154705, "my genesis block!!",
-    "816534932c2b7154836da6afc367695e6337db8a921823784c14378abed4f7d7");
+    "816534932c2b7154836da6afc367695e6337db8a921823784c14378abed4f7d7", 0, 0);
     };
 
 // An in-memory JS array is used to store the blockchain
@@ -63,8 +66,8 @@ var initHttpServer = () => {
 
     app.get('/blocks', (req, res) => res.send(JSON.stringify(blockchain)));
     app.post('/mineBlock', (req, res) => {
-        var newBlock = generateNextBlock(req.body.data);
-        // var newBlock = mineBlock(req.body.data);
+        // var newBlock = generateNextBlock(req.body.data);
+        var newBlock = mineBlock(req.body.data);
         addBlock(newBlock);
         broadcast(responseLatestMsg());
         console.log('block added: ' + JSON.stringify(newBlock));
@@ -80,7 +83,7 @@ var initHttpServer = () => {
     app.listen(http_port, () => console.log('Listening http on port: ' + http_port));
 };
 
-initHttpServer();
+// initHttpServer();
 
 // Create a function for P2P server initP2PServer. It will initialize the server with given p2p_port. For communication between the peers, we will use ports 6xxx.
 var initP2PServer = () => {
@@ -134,14 +137,14 @@ var initErrorHandler = (ws) => {
 var getLatestBlock = () => blockchain[blockchain.length - 1];
 
 // Implemented during the mining process..miner calculates the hash for the next block.
-var calculateHash = (index, previousHash, timestamp, data) => {
-    return CryptoJS.SHA256(index + previousHash + timestamp + data).toString();
+var calculateHash = (index, previousHash, timestamp, data, nonce) => {
+    return CryptoJS.SHA256(index + previousHash + timestamp + data + nonce).toString();
 }
 
 
 // This calculateHashForBlock() function will execute the calculateHash function for a given block and return SHA256 hash of a string which is the result of concatenating: block.index, block.previousHash, block.timestamp, and block.data.
 var calculateHashForBlock = (block) => {
-    return calculateHash(block.index, block.previousHash, block.timestamp, block.data);
+    return calculateHash(block.index, block.previousHash, block.timestamp, block.data, block.nonce);
 };
 // // {{{{{ Test function }}}}} ====================================
 // // Test the hash calulator for new blocks
@@ -269,6 +272,26 @@ var replaceChain = (newBlocks) => {
         console.log('Received blockchain invalid');
     }
 };
+
+
+// CREATE BLOCK MINING FUNCTION
+// It receives the block info and goes through a while loop that must satisfy a given hash condition. If the generated hash does not satisfy the difficulty requirements at each loop cycle, the nonce is incremented, otherwise, the loop terminates and a new block is created.
+var mineBlock = (blockData) => {
+    var previousBlock = getLatestBlock();
+    var nextIndex = previousBlock.index + 1;
+    var nonce = 0;
+    var nextTimestamp = new Date().getTime() / 1000;
+    var nextHash = calculateHash(nextIndex, previousBlock.hash, nextTimestamp, blockData, nonce);
+    while (nextHash.substring(0, difficulty) !== Array(difficulty + 1).join("0")) {
+        nonce++
+        nextTimestamp = new Date().getTime() / 1000;
+        nextHash = calculateHash(nextIndex, previousBlock.hash, nextTimestamp, blockData, nonce);
+
+        console.log("\"index\":" + nextIndex + ",\"previousHash\":" + previousBlock.hash + "\"timestamp\":" + nextTimestamp + ",\"data\":" + blockData + ",\"x1b[33mhash: " + + " \"x1b[0m," + nextHash + "\"difficulty\":" + difficulty + ",\"x1b[33mnonce: " + nonce + " \"x1b[0m,")
+    }
+
+    return new Block(nextIndex, previousBlock.hash, nextTimestamp, blockData, nextHash, difficulty, nonce);
+}
 
 
 // {{{{ MESSAGING CODE }}}}
