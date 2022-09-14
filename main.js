@@ -4,6 +4,10 @@ var express = require("express");
 var bodyParser = require('body-parser');
 var WebSocket = require("ws");
 
+var http_port = process.env.HTTP_PORT || 3001;
+
+var sockets = [];
+
 class Block {
     constructor(index, previousHash, timestamp, data, hash) {
         this.index = index;
@@ -23,20 +27,51 @@ var getGenesisBlock = () => {
 // An in-memory JS array is used to store the blockchain
 var blockchain = [getGenesisBlock()];
 
-// {{{{{ Test function }}}}} ====================================
-// Testing the creation of Genesis block and printing to the console
-function testApp() {
-    function showBlockchain(inputBlockchain) {
-        for (let i = 0; i < inputBlockchain.length; i++) {
-            console.log(inputBlockchain[i]);
-        }
+// // {{{{{ Test function }}}}} ====================================
+// // Testing the creation of Genesis block and printing to the console
+// function testApp() {
+//     function showBlockchain(inputBlockchain) {
+//         for (let i = 0; i < inputBlockchain.length; i++) {
+//             console.log(inputBlockchain[i]);
+//         }
 
-        console.log();
-    }
+//         console.log();
+//     }
 
-    showBlockchain(blockchain);
-}
-testApp(); // ======================================================
+//     showBlockchain(blockchain);
+// }
+// testApp(); // ======================================================
+
+
+
+// User-control node via HTTP REST API server
+var initHttpServer = () => {
+    var app = express();
+    app.use(bodyParser.json());
+
+    app.get('/blocks', (req, res) => res.send(JSON.stringify(blockchain)));
+    app.post('/mineBlock', (req, res) => {
+        var newBlock = generateNextBlock(req.body.data);
+        // var newBlock = mineBlock(req.body.data);
+        addBlock(newBlock);
+        // broadcast(responseLatestMsg());
+        console.log('block added: ' + JSON.stringify(newBlock));
+        res.send();
+    });
+    app.get('/peers', (req, res) => {
+        res.send(sockets.map(s => s._socket.remoteAddress + ':' + s._socket.remotePort));
+    });
+    app.post('/addPeer', (req, res) => {
+        // connectToPeers([req.body.peer]);
+        res.send();
+    });
+    app.listen(http_port, () => console.log('Listening http on port: ' + http_port));
+};
+
+// initHttpServer();
+
+
+
 
 
 // Get the last element in blockchain array
@@ -52,12 +87,13 @@ var calculateHash = (index, previousHash, timestamp, data) => {
 var calculateHashForBlock = (block) => {
     return calculateHash(block.index, block.previousHash, block.timestamp, block.data);
 };
-// {{{{{ Test function }}}}} ====================================
-// Test the hash calulator for new blocks
-function testCalcHashForBlock() {
-    console.log(calculateHashForBlock(getGenesisBlock()));
-}
-testCalcHashForBlock(); // =======================================
+// // {{{{{ Test function }}}}} ====================================
+// // Test the hash calulator for new blocks
+// function testCalcHashForBlock() {
+//     console.log(calculateHashForBlock(getGenesisBlock()));
+//     console.log();
+// }
+// testCalcHashForBlock(); // =======================================
 
 
 // Generate NEXT BLOCK - Retrieve hash of previous block to verify linkage, then create new block with hash
@@ -94,22 +130,50 @@ var addBlock = (newBlock) => {
     }
 };
 
-// {{{{{ Test function }}}}} ====================================
-// Test addition / validation of next block
-function testAddBlock() {
-    function showBlockchain(inputBlockchain) {
-        for (let i = 0; i < inputBlockchain.length; i++) {
-            console.log(inputBlockchain[i]);
-        }
+// // {{{{{ Test function }}}}} ====================================
+// // Test addition / validation of next block
+// function testAddBlock() {
+//     function showBlockchain(inputBlockchain) {
+//         for (let i = 0; i < inputBlockchain.length; i++) {
+//             console.log(inputBlockchain[i]);
+//         }
 
-        console.log();
+//         console.log();
+//     }
+
+//     console.log("blockchain before addBlock() execution:");
+//     showBlockchain(blockchain);
+//     addBlock(generateNextBlock("test block data"));
+//     console.log("\n");
+//     console.log("blockchain after addBlock() execution:");
+//     showBlockchain(blockchain);
+// }
+// testAddBlock(); // ================================================
+
+
+// Perform elementary checks for network validity
+var isValidChain = (blockchainToValidate) => {
+    if (JSON.stringify(blockchainToValidate[0]) !== JSON.stringify(getGenesisBlock())) {
+        return false;
     }
+    var tempBlocks = [blockchainToValidate[0]];
+    for (var i = 1; i < blockchainToValidate.length; i++) {
+        if (isValidNewBlock(blockchainToValidate[i], tempBlocks[i - 1])) {
+            tempBlocks.push(blockchainToValidate[i]);
+        } else {
+            return false;
+        }
+    }
+    return true;
+};
 
-    console.log("blockchain before addBlock() execution:");
-    showBlockchain(blockchain);
-    addBlock(generateNextBlock("test block data"));
-    console.log("\n");
-    console.log("blockchain after addBlock() execution:");
-    showBlockchain(blockchain);
-}
-testAddBlock(); // ================================================
+
+var replaceChain = (newBlocks) => {
+    if (isValidChain(newBlocks) && newBlocks.length > blockchain.length) {
+        console.log('Received blockchain is valid. Replacing current blockchain with received blockchain');
+        blockchain = newBlocks;
+        broadcast(responseLatestMsg());
+    } else {
+        console.log('Received blockchain invalid');
+    }
+};
